@@ -291,6 +291,91 @@
             {% endif %}
             <p style="margin-top: 15px;">Customize this page to add analysis features specific to your data.</p>
         </div>
+        
+        <div class="analysis-grid">
+            <div class="analysis-card">
+                <h2>Forecast Expenses</h2>
+                <p>Project total expenditures for the next 3 years given an inflation rate.</p>
+                <form method="POST">
+                    <input type="hidden" name="analysis_type" value="forecast">
+                    <div class="form-group">
+                        <label for="inflation">Inflation Rate (%)</label>
+                        <input type="number" step="0.01" id="inflation" name="inflation" value="3.0" required>
+                    </div>
+                    <button type="submit">Run Forecast</button>
+                </form>
+            </div>
+
+            <div class="analysis-card">
+                <h2>Top / Worst Deliverables</h2>
+                <p>Report the N-best or N-worst deliverables based on average review score.</p>
+                <form method="POST">
+                    <input type="hidden" name="analysis_type" value="top_n">
+                    <div class="form-group">
+                        <label for="n">N (number of items)</label>
+                        <input type="number" id="n" name="n" value="3" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="mode">Mode</label>
+                        <select id="mode" name="mode">
+                            <option value="best">Best</option>
+                            <option value="worst">Worst</option>
+                        </select>
+                    </div>
+                    <button type="submit">Show Results</button>
+                </form>
+            </div>
+        </div>
+
+        {% if result %}
+            <div class="result-section">
+                <div class="result-header">Analysis Result</div>
+                <div class="result-content">
+                    {% if result.type == 'forecast' %}
+                        <div class="result-item">
+                            <div class="result-label">Base Year</div>
+                            <div class="result-value">{{ result.base_year }}</div>
+                        </div>
+                        <div class="result-item">
+                            <div class="result-label">Base Total</div>
+                            <div class="result-value">${{ result.base_total }}</div>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr><th>Year</th><th>Projected Total</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for p in result.projections %}
+                                    <tr>
+                                        <td>{{ p.year }}</td>
+                                        <td>${{ p.projected_total }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% elif result.type == 'top_n' %}
+                        <div class="highlight">
+                            <strong>{{ result.n }} {{ result.mode }} deliverables</strong>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr><th>Name</th><th>Type</th><th>Avg Score</th><th>#Reviews</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for item in result.items %}
+                                    <tr>
+                                        <td>{{ item.name }}</td>
+                                        <td>{{ item.type }}</td>
+                                        <td>{{ (item.avg_score|default(0)|round(2)) }}</td>
+                                        <td>{{ item.reviews }}</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    {% endif %}
+                </div>
+            </div>
+        {% endif %}
     </div>
 </body>
 </html>

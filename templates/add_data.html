@@ -230,6 +230,55 @@
             {% endif %}
             <p style="margin-top: 20px; color: #666;">Customize this page to add forms specific to your database tables.</p>
         </div>
+        
+        <div class="form-section" style="margin-top:20px;">
+            <h2>Insert Into Any Table</h2>
+            <p>Select a table and the form below will allow you to enter values for its columns.</p>
+            {% if selected_table and table_columns %}
+                <div class="form-section" style="margin-top:30px;">
+                    <h2>Insert Row into `{{ selected_table }}`</h2>
+                    <form method="POST">
+                        <input type="hidden" name="form_type" value="generic">
+                        <input type="hidden" name="table_name" value="{{ selected_table }}">
+                        {% for col in table_columns %}
+                            {% set cname = col.COLUMN_NAME %}
+                            {% set dtype = col.DATA_TYPE %}
+                            {% set is_auto = 'auto_increment' in (col.EXTRA or '') or col.COLUMN_KEY == 'PRI' and col.EXTRA == 'auto_increment' %}
+                            {% if not is_auto %}
+                                <div class="form-group">
+                                    <label for="col_{{ cname }}">{{ cname }} <span class="optional">({{ dtype }})</span></label>
+                                    {% if dtype in ['date','datetime','timestamp'] %}
+                                        <input type="date" id="col_{{ cname }}" name="col_{{ cname }}">
+                                    {% elif dtype in ['int','tinyint','smallint','mediumint','bigint'] %}
+                                        <input type="number" id="col_{{ cname }}" name="col_{{ cname }}">
+                                    {% elif dtype in ['decimal','double','float'] %}
+                                        <input type="number" step="0.01" id="col_{{ cname }}" name="col_{{ cname }}">
+                                    {% else %}
+                                        <input type="text" id="col_{{ cname }}" name="col_{{ cname }}">
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        {% endfor %}
+                        <button type="submit">Insert Row</button>
+                    </form>
+                </div>
+            {% endif %}
+            <form method="GET">
+                <label for="table_select">Choose table:</label>
+                <select id="table_select" name="table" style="margin-left:10px; padding:8px;">
+                    <option value="">-- Choose a table --</option>
+                    {% for t in tables %}
+                        <option value="{{ t }}" {% if selected_table == t %}selected{% endif %}>{{ t }}</option>
+                    {% endfor %}
+                </select>
+                <button type="submit" style="margin-left:12px;">Load Form</button>
+            </form>
+            {% if selected_table %}
+                <p style="margin-top:10px; color:#555;">Preparing insert form for table: <strong>{{ selected_table }}</strong></p>
+            {% endif %}
+        </div>
+
+
     </div>
 </body>
 </html>

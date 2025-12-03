@@ -68,26 +68,121 @@ def get_all_tables():
     conn.close()
     return tables
 
+def init_db():
+    """Create example tables if they do not exist and insert minimal sample data."""
+    conn = get_db_connection()
+    if not conn:
+        return
+
+    cursor = conn.cursor()
+    try:
+        # Employees table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            position VARCHAR(100),
+            hire_date DATE,
+            salary DECIMAL(12,2)
+        ) ENGINE=InnoDB;
+        """)
+
+        # Dependents table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS dependents (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            employee_id INT NOT NULL,
+            name VARCHAR(100) NOT NULL,
+            relation VARCHAR(50),
+            CONSTRAINT fk_emp FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB;
+        """)
+
+        # Expenses table (yearly totals or items)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            year INT NOT NULL,
+            category VARCHAR(100),
+            amount DECIMAL(14,2) NOT NULL
+        ) ENGINE=InnoDB;
+        """)
+
+        # Deliverables and reviews
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS deliverables (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            type VARCHAR(50)
+        ) ENGINE=InnoDB;
+        """)
+
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reviews (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            deliverable_id INT NOT NULL,
+            score INT NOT NULL,
+            comment TEXT,
+            CONSTRAINT fk_deliv FOREIGN KEY (deliverable_id) REFERENCES deliverables(id) ON DELETE CASCADE
+        ) ENGINE=InnoDB;
+        """)
+
+        conn.commit()
+
+        # Insert some minimal sample rows if empty
+        cursor.execute("SELECT COUNT(*) FROM employees")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO employees (name, position, hire_date, salary) VALUES (%s,%s,%s,%s)",
+                           ("Alice Example", "Engineer", datetime(2020,1,15).date(), 75000.00))
+            emp_id = cursor.lastrowid
+            cursor.execute("INSERT INTO dependents (employee_id, name, relation) VALUES (%s,%s,%s)",
+                           (emp_id, "Bob Example", "Child"))
+
+        cursor.execute("SELECT COUNT(*) FROM expenses")
+        if cursor.fetchone()[0] == 0:
+            cursor.executemany("INSERT INTO expenses (year, category, amount) VALUES (%s,%s,%s)", [
+                (2021, 'Operations', 120000.00),
+                (2022, 'Operations', 130000.00),
+                (2023, 'Operations', 140000.00)
+            ])
+
+        cursor.execute("SELECT COUNT(*) FROM deliverables")
+        if cursor.fetchone()[0] == 0:
+            cursor.execute("INSERT INTO deliverables (name, type) VALUES (%s,%s)", ("Service A", "Service"))
+            d1 = cursor.lastrowid
+            cursor.execute("INSERT INTO deliverables (name, type) VALUES (%s,%s)", ("Product B", "Product"))
+            d2 = cursor.lastrowid
+            cursor.executemany("INSERT INTO reviews (deliverable_id, score, comment) VALUES (%s,%s,%s)", [
+                (d1, 8, 'Good'),
+                (d1, 9, 'Excellent'),
+                (d2, 5, 'Average')
+            ])
+
+        conn.commit()
+    except Error as e:
+        print(f"Error initializing DB: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
 def get_table_data(table_name):
     conn = get_db_connection()
     if not conn:
         return None, None
-    
     cursor = conn.cursor(dictionary=True)
-    
     try:
-        cursor.execute(f"SELECT * FROM {table_name}")
+        cursor.execute(f"SELECT * FROM `{table_name}` LIMIT 1000")
         rows = cursor.fetchall()
         columns = list(rows[0].keys()) if rows else []
         cursor.close()
         conn.close()
         return columns, rows
     except Error as e:
-        print(f"Error: {e}")
+        print(f"Error fetching table data for {table_name}: {e}")
         cursor.close()
         conn.close()
         return None, None
-
 # Route 1: Home page with navigation
 @app.route("/")
 def index():
@@ -115,26 +210,203 @@ def show_table():
 # Route 3: Add New Data (Function 2)
 @app.route("/add_data", methods=['GET', 'POST'])
 def add_data():
-    if request.method == 'POST':
-        # Get all tables to allow dynamic insertion
-        tables = get_all_tables()
-        
-        # This is a placeholder - you can customize based on your actual tables
-        flash('Add data functionality ready - customize based on your database tables', 'success')
-        return redirect(url_for('add_data'))
-    
-    # Get list of tables for display
+    message = None
     tables = get_all_tables()
-    return render_template('add_data.html', tables=tables)
+    selected_table = None
+    table_columns = None
+
+    if request.method == 'POST':
+        form_type = request.form.get('form_type')
+        conn = get_db_connection()
+        if not conn:
+            flash('Database connection error', 'error')
+            return redirect(url_for('add_data'))
+
+        cursor = conn.cursor()
+        try:
+            if form_type == 'employee':
+                # Insert employee and optionally dependent in a transaction
+                name = request.form.get('emp_name')
+                position = request.form.get('emp_position')
+                hire_date = request.form.get('emp_hire_date') or None
+                salary = request.form.get('emp_salary') or 0
+
+                cursor.execute('START TRANSACTION')
+                cursor.execute('INSERT INTO employees (name, position, hire_date, salary) VALUES (%s,%s,%s,%s)',
+                               (name, position, hire_date, salary))
+                emp_id = cursor.lastrowid
+
+                dep_name = request.form.get('dep_name')
+                dep_relation = request.form.get('dep_relation')
+                if dep_name:
+                    cursor.execute('INSERT INTO dependents (employee_id, name, relation) VALUES (%s,%s,%s)',
+                                   (emp_id, dep_name, dep_relation))
+
+                conn.commit()
+                flash('Employee (and dependent) added successfully', 'success')
+
+            elif form_type == 'expense':
+                year = int(request.form.get('exp_year'))
+                category = request.form.get('exp_category')
+                amount = float(request.form.get('exp_amount') or 0)
+                cursor.execute('INSERT INTO expenses (year, category, amount) VALUES (%s,%s,%s)',
+                               (year, category, amount))
+                conn.commit()
+                flash('Expense added successfully', 'success')
+
+            elif form_type == 'deliverable':
+                name = request.form.get('deliv_name')
+                dtype = request.form.get('deliv_type')
+                score = request.form.get('review_score')
+                comment = request.form.get('review_comment')
+
+                cursor.execute('START TRANSACTION')
+                cursor.execute('INSERT INTO deliverables (name, type) VALUES (%s,%s)', (name, dtype))
+                deliv_id = cursor.lastrowid
+                if score:
+                    cursor.execute('INSERT INTO reviews (deliverable_id, score, comment) VALUES (%s,%s,%s)',
+                                   (deliv_id, int(score), comment))
+                conn.commit()
+                flash('Deliverable and review added successfully', 'success')
+
+            elif form_type == 'generic':
+                # Generic insert into any table selected by user
+                table_name = request.form.get('table_name')
+                if not table_name:
+                    raise Error('No table specified for generic insert')
+
+                # fetch columns to insert (skip auto_increment)
+                cursor.execute('''
+                    SELECT COLUMN_NAME, IS_NULLABLE, EXTRA
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+                    ORDER BY ORDINAL_POSITION
+                ''', (DB_CONFIG['database'], table_name))
+                cols_meta = cursor.fetchall()
+                insert_cols = []
+                values = []
+                for cm in cols_meta:
+                    colname = cm[0]
+                    extra = cm[2] or ''
+                    is_nullable = cm[1]
+                    if 'auto_increment' in extra.lower():
+                        continue
+                    # Read posted value
+                    v = request.form.get(f'col_{colname}')
+                    if v == '':
+                        # convert empty string to None if column allows NULL
+                        v = None if is_nullable == 'YES' else ''
+                    insert_cols.append(colname)
+                    values.append(v)
+
+                if not insert_cols:
+                    raise Error('No insertable columns detected for table')
+
+                placeholders = ','.join(['%s'] * len(insert_cols))
+                cols_sql = ','.join([f'`{c}`' for c in insert_cols])
+                sql = f'INSERT INTO `{table_name}` ({cols_sql}) VALUES ({placeholders})'
+                cursor.execute(sql, tuple(values))
+                conn.commit()
+                flash(f'Row inserted into {table_name}', 'success')
+
+            else:
+                flash('Unknown form submission', 'error')
+
+        except Error as e:
+            conn.rollback()
+            flash(f'Error inserting data: {e}', 'error')
+        finally:
+            cursor.close()
+            conn.close()
+
+        return redirect(url_for('add_data'))
+    # GET: possibly show dynamic insert form for selected table
+    if request.method == 'GET':
+        selected_table = request.args.get('table')
+        if selected_table:
+            # fetch column metadata from INFORMATION_SCHEMA
+            conn = get_db_connection()
+            if conn:
+                cur = conn.cursor(dictionary=True)
+                try:
+                    cur.execute('''
+                        SELECT COLUMN_NAME, DATA_TYPE, COLUMN_KEY, IS_NULLABLE, EXTRA
+                        FROM INFORMATION_SCHEMA.COLUMNS
+                        WHERE TABLE_SCHEMA=%s AND TABLE_NAME=%s
+                        ORDER BY ORDINAL_POSITION
+                    ''', (DB_CONFIG['database'], selected_table))
+                    table_columns = cur.fetchall()
+                except Error as e:
+                    flash(f'Error fetching table schema: {e}', 'error')
+                finally:
+                    cur.close()
+                    conn.close()
+
+    return render_template('add_data.html', tables=tables, selected_table=selected_table, table_columns=table_columns)
 
 # Route 4: Data Analysis (Function 3)
 @app.route("/analysis", methods=['GET', 'POST'])
 def analysis():
-    # Placeholder for custom analysis based on your actual database tables
     tables = get_all_tables()
+    result = None
+
+    if request.method == 'POST':
+        analysis_type = request.form.get('analysis_type')
+        conn = get_db_connection()
+        if not conn:
+            flash('Database connection error', 'error')
+            return redirect(url_for('analysis'))
+
+        cursor = conn.cursor(dictionary=True)
+        try:
+            if analysis_type == 'forecast':
+                # Forecast next 3 years total expenses given an inflation rate
+                inflation = float(request.form.get('inflation') or 0) / 100.0
+                cursor.execute('SELECT year, SUM(amount) as total FROM expenses GROUP BY year ORDER BY year')
+                rows = cursor.fetchall()
+                years = [r['year'] for r in rows]
+                totals = {r['year']: float(r['total']) for r in rows}
+
+                if not years:
+                    flash('No expense data available for forecasting', 'error')
+                else:
+                    last_year = max(years)
+                    last_total = totals[last_year]
+                    projections = []
+                    for i in range(1,4):
+                        proj = last_total * ((1 + inflation) ** i)
+                        projections.append({'year': last_year + i, 'projected_total': round(proj,2)})
+
+                    result = {'type':'forecast','base_year': last_year,'base_total': round(last_total,2),'projections': projections}
+
+            elif analysis_type == 'top_n':
+                n = int(request.form.get('n') or 5)
+                mode = request.form.get('mode') or 'best'
+                cursor.execute('''
+                    SELECT d.id, d.name, d.type, AVG(r.score) as avg_score, COUNT(r.id) as reviews
+                    FROM deliverables d
+                    LEFT JOIN reviews r ON r.deliverable_id = d.id
+                    GROUP BY d.id
+                ''')
+                rows = cursor.fetchall()
+                # compute order
+                rows_sorted = sorted(rows, key=lambda r: (r['avg_score'] if r['avg_score'] is not None else 0), reverse=(mode=='best'))
+                rows_sorted = rows_sorted[:n]
+                result = {'type':'top_n','mode':mode,'n':n,'items': rows_sorted}
+
+        except Error as e:
+            flash(f'Error running analysis: {e}', 'error')
+        finally:
+            cursor.close()
+            conn.close()
+
+        return render_template('analysis.html', tables=tables, result=result)
+
     return render_template('analysis.html', tables=tables)
 
 if __name__ == "__main__":
     print("Starting Flask application...")
+    # Initialize demo tables and data, then test connection
+    init_db()
     check_db_connection()
     app.run(debug=True)
