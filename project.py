@@ -68,103 +68,9 @@ def get_all_tables():
     conn.close()
     return tables
 
-def init_db():
-    """Create example tables if they do not exist and insert minimal sample data."""
-    conn = get_db_connection()
-    if not conn:
-        return
 
-    cursor = conn.cursor()
-    try:
-        # Employees table
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS employees (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(100) NOT NULL,
-            position VARCHAR(100),
-            hire_date DATE,
-            salary DECIMAL(12,2)
-        ) ENGINE=InnoDB;
-        """)
-
-        # Dependents table
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS dependents (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            employee_id INT NOT NULL,
-            name VARCHAR(100) NOT NULL,
-            relation VARCHAR(50),
-            CONSTRAINT fk_emp FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-        """)
-
-        # Expenses table (yearly totals or items)
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS expenses (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            year INT NOT NULL,
-            category VARCHAR(100),
-            amount DECIMAL(14,2) NOT NULL
-        ) ENGINE=InnoDB;
-        """)
-
-        # Deliverables and reviews
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS deliverables (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            name VARCHAR(200) NOT NULL,
-            type VARCHAR(50)
-        ) ENGINE=InnoDB;
-        """)
-
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS reviews (
-            id INT AUTO_INCREMENT PRIMARY KEY,
-            deliverable_id INT NOT NULL,
-            score INT NOT NULL,
-            comment TEXT,
-            CONSTRAINT fk_deliv FOREIGN KEY (deliverable_id) REFERENCES deliverables(id) ON DELETE CASCADE
-        ) ENGINE=InnoDB;
-        """)
-
-        conn.commit()
-
-        # Insert some minimal sample rows if empty
-        cursor.execute("SELECT COUNT(*) FROM employees")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO employees (name, position, hire_date, salary) VALUES (%s,%s,%s,%s)",
-                           ("Alice Example", "Engineer", datetime(2020,1,15).date(), 75000.00))
-            emp_id = cursor.lastrowid
-            cursor.execute("INSERT INTO dependents (employee_id, name, relation) VALUES (%s,%s,%s)",
-                           (emp_id, "Bob Example", "Child"))
-
-        cursor.execute("SELECT COUNT(*) FROM expenses")
-        if cursor.fetchone()[0] == 0:
-            cursor.executemany("INSERT INTO expenses (year, category, amount) VALUES (%s,%s,%s)", [
-                (2021, 'Operations', 120000.00),
-                (2022, 'Operations', 130000.00),
-                (2023, 'Operations', 140000.00)
-            ])
-
-        cursor.execute("SELECT COUNT(*) FROM deliverables")
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO deliverables (name, type) VALUES (%s,%s)", ("Service A", "Service"))
-            d1 = cursor.lastrowid
-            cursor.execute("INSERT INTO deliverables (name, type) VALUES (%s,%s)", ("Product B", "Product"))
-            d2 = cursor.lastrowid
-            cursor.executemany("INSERT INTO reviews (deliverable_id, score, comment) VALUES (%s,%s,%s)", [
-                (d1, 8, 'Good'),
-                (d1, 9, 'Excellent'),
-                (d2, 5, 'Average')
-            ])
-
-        conn.commit()
-    except Error as e:
-        print(f"Error initializing DB: {e}")
-        conn.rollback()
-    finally:
-        cursor.close()
-        conn.close()
+    
+       
 
 def get_table_data(table_name):
     conn = get_db_connection()
@@ -407,6 +313,5 @@ def analysis():
 if __name__ == "__main__":
     print("Starting Flask application...")
     # Initialize demo tables and data, then test connection
-    init_db()
     check_db_connection()
     app.run(debug=True)
